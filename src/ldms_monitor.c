@@ -54,7 +54,7 @@ int main(int argc, char *argv[])
     // Show version string
     zsys_info ("This is %s\n", PACKAGE_STRING);
 
-    //  Create listener beacon to receive other servers beacons
+    //  Create listener beacon to receive other servers peers
     zactor_t *listener = zactor_new (zbeacon, NULL);
     assert (listener);
     if (verbose)
@@ -72,25 +72,33 @@ int main(int argc, char *argv[])
     zsock_send (listener, "sb", "SUBSCRIBE", "", 0);
 
     // Hash table that holds all the beacon information that we received so far
-    zhash_t *beacons_hash = zhash_new ();
-    assert (beacons_hash);
+    zhash_t *peers_hash = zhash_new ();
+    assert (peers_hash);
 
     // Main loop 
+    char *ipaddress, *received;
     while (!zsys_interrupted) {
-        char *ipaddress, *received; 
         zstr_recvx (listener, &ipaddress, &received, NULL);
         if (ipaddress) {
-            puts (ipaddress);
-            puts (received);
-            zstr_free (&ipaddress);
-            zstr_free (&received);
+            // Remove the first three characters "VP "
+            int rc = zhash_insert (peers_hash, received + 3, ipaddress);
+            // Print if not known already
+            if (rc == 0) {
+                printf ("%s - %s\n", received + 3,
+                        (const char *) zhash_lookup (peers_hash, received + 3));
+            }
         }
 
         zclock_sleep (10u); /* release to let the OS do something else */
     }
+    zstr_free (&ipaddress);
+    zstr_free (&received);
 
+    // Write peers hash to file for later use
+    zhash_comment (peers_hash, "Peers found in VOST system");
+    zhash_save (peers_hash, "peers.txt");
     // Delete hash table
-    zhash_destroy (&beacons_hash);
+    zhash_destroy (&peers_hash);
 
     // Tear down the beacon
     zsys_info ("Tear down beacon service");
